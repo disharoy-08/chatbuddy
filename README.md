@@ -60,20 +60,18 @@ flowchart TD
 
 ## 🚀 Implementation Roadmap
 
-Let's build this project in structured stages:
-
-- [ ] **Stage 1 — Basic FastAPI `/chat` Endpoint**  
+- [x] **Stage 1 — Basic FastAPI `/chat` Endpoint**  
   Set up FastAPI app, define Pydantic request/response schemas, and verify a stateless `/chat` endpoint connecting directly to Gemini API.
-- [ ] **Stage 2 — In-Memory Conversational History**  
+- [x] **Stage 2 — In-Memory Conversational History**  
   Implement a temporary in-memory dictionary to test multi-turn context retention and observe how LLM context affects response quality.
-- [ ] **Stage 3 — PostgreSQL & SQLAlchemy Integration**  
+- [x] **Stage 3 — PostgreSQL & SQLAlchemy Integration**  
   Configure database connections, define SQLAlchemy models (`Conversation`, `Message`), and implement the startup lifecycle (reachability check + auto-creation of missing tables).
-- [ ] **Stage 4 — Persistent Multi-Turn Conversations**  
+- [x] **Stage 4 — Persistent Multi-Turn Conversations**  
   Store every inbound user prompt and outbound model response in PostgreSQL; retrieve past history when returning to an existing conversation.
-- [ ] **Stage 5 — Configurable Sliding Window ($N$ Messages)**  
+- [x] **Stage 5 — Configurable Sliding Window ($N$ Messages)**  
   Implement a dynamic limit to pass only the last $N$ messages as context to the Gemini API, preventing context bloat and managing token costs.
-- [ ] **Stage 6 — Streamlit UI & Conversation Isolation**  
-  Build the Streamlit chat frontend with conversation selection/creation sidebar, verify session isolation, and test that parallel chats do not cross-contaminate.
+- [x] **Stage 6 — Streamlit UI & Conversation Isolation**  
+  Build the Streamlit chat frontend with conversation selection/creation sidebar, verify session isolation, thinking spinner, and real-time token streaming.
 - [ ] **Stage 7 (Enhancement) — Redis Caching & Rate Limiting**  
   Integrate Redis for fast session retrieval, caching frequent queries, and rate limiting requests.
 
@@ -131,21 +129,22 @@ erDiagram
 ```text
 chat-with-memory/
 ├── backend/
-│   ├── __init__.py
-│   ├── main.py                 # FastAPI application entrypoint
-│   ├── config.py               # Settings & environment variables
-│   ├── database.py             # SQLAlchemy session & engine setup
-│   ├── models.py               # Database ORM models (Conversation, Message)
-│   ├── schemas.py              # Pydantic schemas for request/response validation
-│   ├── crud.py                 # DB queries (create message, fetch history)
-│   └── llm.py                  # Gemini API client & context window logic
+│   ├── routers/
+│   │   ├── chat.py             # Chat & real-time streaming endpoints (/chat, /chat/stream)
+│   │   └── conversations.py    # History endpoints (list, get messages, delete)
+│   ├── services/
+│   │   └── chat_service.py     # Gemini client, sliding-window context & stream logic
+│   ├── database.py             # SQLAlchemy engine, sessionmaker & auto-provisioning
+│   ├── models.py               # DeclarativeBase models (Conversation, Message)
+│   ├── schemas.py              # Pydantic schemas (ChatRequest)
+│   └── main.py                 # FastAPI app entrypoint & lifespan management
 ├── frontend/
-│   └── streamlit_app.py        # Streamlit interactive UI
+│   └── streamlit_app.py        # Streamlit multi-session UI with real-time streaming
 ├── docs/
 │   └── database/
 │       └── schema.md           # Database ER diagram & data dictionary
 ├── .env.example                # Sample environment variables
-├── .gitignore                  # Git ignore rules
+├── .gitignore                  # Git ignore rules (includes __pycache__ & *.pyc)
 ├── requirements.txt            # Python dependencies
 └── README.md                   # Project documentation
 ```
@@ -198,6 +197,8 @@ Update your credentials in `.env`:
 
 ```env
 GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-3.8-flash
+
 # PostgreSQL connection string:
 DATABASE_URL=postgresql://postgres:your_password@localhost:5432/chatbuddy
 # (Alternative lightweight SQLite for quick testing):
@@ -217,7 +218,7 @@ CONTEXT_WINDOW_LIMIT=10
 uvicorn backend.main:app --reload --port 8000
 ```
 - API Docs: `http://localhost:8000/docs`
-- Health check: `http://localhost:8000/`
+- Health check: `http://localhost:8000/health`
 
 ### 2. Start the Streamlit Frontend
 
@@ -234,11 +235,13 @@ streamlit run frontend/streamlit_app.py
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `GET` | `/` | API status and health check |
-| `POST` | `/chat` | Send a message, get Gemini response, and persist to history |
-| `GET` | `/conversations` | List all active conversation threads |
-| `POST` | `/conversations` | Create a new conversation thread |
-| `GET` | `/conversations/{id}/messages` | Retrieve message history for a specific conversation |
+| `GET` | `/` | API status and greeting |
+| `GET` | `/health` | API health check |
+| `POST` | `/chat` | Send a message, get buffered Gemini response, and persist to history |
+| `POST` | `/chat/stream` | Stream tokens in real-time with `X-Conversation-Id` header |
+| `GET` | `/conversations` | List all active conversation threads (newest first) |
+| `GET` | `/conversations/{id}/messages` | Retrieve full chronological message history for a conversation |
+| `DELETE` | `/conversations/{id}` | Delete a conversation and cascade-delete its messages |
 
 ---
 

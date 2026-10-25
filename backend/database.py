@@ -49,5 +49,11 @@ def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     
       
-           
+def get_db():
+    """Dependency that yields a database session per request and closes it after."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()           
         
